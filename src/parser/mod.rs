@@ -2,6 +2,16 @@ use crate::ast::{Expression, Program, Statement};
 use crate::lexer::Lexer;
 use crate::token::{Token, TokenType};
 
+enum Precedence {
+    Lowest = 0,
+    Equals,
+    LessGreater,
+    Sum,
+    Product,
+    Prefix,
+    Call,
+}
+
 struct Parser<'a> {
     lexer: &'a mut Lexer,
 
@@ -9,6 +19,16 @@ struct Parser<'a> {
     peek_token: Option<Token>,
 
     errors: Vec<String>,
+}
+
+fn dummy_identifier() -> Expression {
+    Expression::Identifier {
+        token: Token {
+            literal: "".to_string(),
+            t: TokenType::Ident,
+        },
+        value: "".to_string(),
+    }
 }
 
 impl<'a> Parser<'a> {
@@ -53,7 +73,7 @@ impl<'a> Parser<'a> {
             Some(ref token) => match token.t {
                 TokenType::Let => self.parse_let_statement(),
                 TokenType::Return => self.parse_return_statement(),
-                _ => None,
+                _ => self.parse_expression_statement(),
             },
             _ => None,
         }
@@ -85,7 +105,7 @@ impl<'a> Parser<'a> {
         Some(Statement::Let {
             name: name_token,
             token: let_token,
-            //            value: Box::new(int_token),
+            value: dummy_identifier(),
         })
     }
 
@@ -98,7 +118,44 @@ impl<'a> Parser<'a> {
 
         Some(Statement::Return {
             token: return_token,
-            //            value:
+            value: dummy_identifier(),
+        })
+    }
+
+    fn parse_expression_statement(&mut self) -> Option<Statement> {
+        let statement = Statement::Expression {
+            token: self.current_token.clone().unwrap(),
+            expression: self.parse_expression().unwrap(), // FIXME: LOWEST?
+        };
+
+        // NOTE: optional semicolon
+        if self.peek_token_is(TokenType::Semicolon) {
+            self.next_token();
+        }
+        Some(statement)
+    }
+
+    fn parse_expression(&mut self) -> Option<Expression> {
+        // TODO
+        self.parse_prefix_op(self.current_token.clone().unwrap().t)
+    }
+
+    fn parse_prefix_op(&mut self, token_type: TokenType) -> Option<Expression> {
+        // TODO
+        match token_type {
+            TokenType::Ident => self.parse_identifier(),
+            t => panic!("{:?} is not supported yet", t),
+        }
+    }
+
+    fn parse_infix_op(&mut self) -> Option<Expression> {
+        None
+    }
+
+    fn parse_identifier(&mut self) -> Option<Expression> {
+        Some(Expression::Identifier {
+            token: self.current_token.clone().unwrap(),
+            value: self.current_token.clone().unwrap().literal,
         })
     }
 
@@ -198,6 +255,30 @@ return 993322;
             } else {
                 panic!("expected return statement");
             }
+        }
+    }
+
+    #[test]
+    fn identifier_expression() {
+        let input = "foobar;";
+
+        let mut lexer = Lexer::new(input.into());
+        let mut parser = Parser::new(&mut lexer);
+        let program = parser.parse_program().unwrap();
+        check_parser_errors(&parser);
+
+        assert_eq!(program.statements.len(), 1);
+
+        if let Statement::Expression { ref expression, .. } = &program.statements[0] {
+            if let Expression::Identifier { ref value, .. } = expression {
+                if value != "foobar" {
+                    panic!("expected foobar");
+                }
+            } else {
+                panic!("expected identifier");
+            }
+        } else {
+            panic!("expected expression statement");
         }
     }
 }
