@@ -144,6 +144,7 @@ impl<'a> Parser<'a> {
         // TODO
         match token_type {
             TokenType::Ident => self.parse_identifier(),
+            TokenType::Int => self.parse_integer_literal(),
             t => panic!("{:?} is not supported yet", t),
         }
     }
@@ -157,6 +158,21 @@ impl<'a> Parser<'a> {
             token: self.current_token.clone().unwrap(),
             value: self.current_token.clone().unwrap().literal,
         })
+    }
+
+    fn parse_integer_literal(&mut self) -> Option<Expression> {
+        if let Ok(value) = self.current_token.clone().unwrap().literal.parse() {
+            Some(Expression::IntegerLiteral {
+                token: self.current_token.clone().unwrap(),
+                value,
+            })
+        } else {
+            self.errors.push(format!(
+                "cloud not parse {} as integer",
+                self.current_token.clone().unwrap().literal
+            ));
+            None
+        }
     }
 
     fn current_token_is(&self, t: TokenType) -> bool {
@@ -279,6 +295,30 @@ return 993322;
             }
         } else {
             panic!("expected expression statement");
+        }
+    }
+
+    #[test]
+    fn integer_literal_expression() {
+        let input = "5;";
+
+        let mut lexer = Lexer::new(input.into());
+        let mut parser = Parser::new(&mut lexer);
+        let program = parser.parse_program().unwrap();
+        check_parser_errors(&parser);
+
+        assert_eq!(program.statements.len(), 1);
+
+        if let Statement::Expression { ref expression, .. } = &program.statements[0] {
+            if let Expression::IntegerLiteral { value, .. } = expression {
+                if value != &5 {
+                    panic!();
+                }
+            } else {
+                panic!();
+            }
+        } else {
+            panic!();
         }
     }
 }

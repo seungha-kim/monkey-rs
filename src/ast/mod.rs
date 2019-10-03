@@ -63,12 +63,15 @@ impl Node for Statement {
 #[derive(Debug, Clone)]
 pub enum Expression {
     Identifier { token: Token, value: String },
+    IntegerLiteral { token: Token, value: i32 },
 }
 
 impl Node for Expression {
     fn string(&self) -> String {
+        use Expression::*;
         match self {
-            Expression::Identifier { ref value, .. } => value.clone(),
+            Identifier { ref value, .. } => value.clone(),
+            IntegerLiteral { ref token, .. } => token.literal.clone(),
         }
     }
 }
