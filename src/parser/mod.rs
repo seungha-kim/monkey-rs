@@ -7,6 +7,8 @@ struct Parser<'a> {
 
     current_token: Option<Token>,
     peek_token: Option<Token>,
+
+    errors: Vec<String>,
 }
 
 impl<'a> Parser<'a> {
@@ -15,6 +17,7 @@ impl<'a> Parser<'a> {
             lexer,
             current_token: None,
             peek_token: None,
+            errors: Vec::new(),
         };
 
         parser.next_token();
@@ -46,13 +49,13 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_statement(&mut self) -> Option<Statement> {
-        if let Some(ref token) = self.current_token {
-            match token.t {
+        match self.current_token {
+            Some(ref token) => match token.t {
                 TokenType::Let => self.parse_let_statement(),
+                TokenType::Return => self.parse_return_statement(),
                 _ => None,
-            }
-        } else {
-            None
+            },
+            _ => None,
         }
     }
 
@@ -60,6 +63,7 @@ impl<'a> Parser<'a> {
         // NOTE: clone -> as_ref로 바꾸면 self에 대한 immutable borrowing이 생기고,
         //       그 이후 mutable borrowing이 불가능해짐.
         // 걸리는게 String을 계속 clone하는건데 이거 나중에 &str로 바꿀 수 있지 않을까?
+        // -> 찾아보니까 될 것 같다. chars_indices였나 쓰고 인덱스로 get 메소드 쓰면
         let let_token = self.current_token.clone().unwrap();
 
         if !self.expect_peek(TokenType::Ident) {
@@ -85,6 +89,19 @@ impl<'a> Parser<'a> {
         })
     }
 
+    fn parse_return_statement(&mut self) -> Option<Statement> {
+        let return_token = self.current_token.clone().unwrap();
+
+        while !self.current_token_is(TokenType::Semicolon) {
+            self.next_token();
+        }
+
+        Some(Statement::Return {
+            token: return_token,
+            //            value:
+        })
+    }
+
     fn current_token_is(&self, t: TokenType) -> bool {
         return self.current_token.is_some() && self.current_token.clone().unwrap().t == t;
     }
@@ -98,8 +115,17 @@ impl<'a> Parser<'a> {
             self.next_token();
             true
         } else {
+            self.peek_error(t);
             false
         }
+    }
+
+    fn peek_error(&mut self, t: TokenType) {
+        self.errors.push(format!(
+            "expected next Token to be {:?}, got {:?} instead",
+            t,
+            self.peek_token.as_ref().unwrap().t
+        ));
     }
 }
 
@@ -107,6 +133,15 @@ impl<'a> Parser<'a> {
 mod tests {
     use super::*;
     use std::any::Any;
+
+    fn check_parser_errors(parser: &Parser) {
+        if parser.errors.len() > 0 {
+            for ref e in &parser.errors {
+                eprintln!("{}", e);
+            }
+            panic!("parser error");
+        }
+    }
 
     #[test]
     fn let_statement() {
@@ -119,26 +154,50 @@ let foobar = 838383;
         let mut lexer = Lexer::new(input.to_string());
         let mut parser = Parser::new(&mut lexer);
         let program = parser.parse_program().unwrap();
+        check_parser_errors(&parser);
 
         assert_eq!(program.statements.len(), 3);
 
-        if let Statement::Let { token: _, ref name } = program.statements[0] {
+        if let Statement::Let { ref name, .. } = program.statements[0] {
             assert_eq!(name.literal, "x");
         } else {
             panic!("expected let statement");
         }
 
-        if let Statement::Let { token: _, ref name } = program.statements[1] {
+        if let Statement::Let { ref name, .. } = program.statements[1] {
             assert_eq!(name.literal, "y");
         } else {
             panic!("expected let statement");
         }
 
-        if let Statement::Let { token: _, ref name } = program.statements[2] {
+        if let Statement::Let { ref name, .. } = program.statements[2] {
             assert_eq!(name.literal, "foobar");
         } else {
             panic!("expected let statement");
         }
     }
 
+    #[test]
+    fn return_statement() {
+        let input = "
+return 5;
+return 10;
+return 993322;
+        ";
+
+        let mut lexer = Lexer::new(input.into());
+        let mut parser = Parser::new(&mut lexer);
+        let program = parser.parse_program().unwrap();
+        check_parser_errors(&parser);
+
+        assert_eq!(program.statements.len(), 3);
+
+        for i in 0..3 {
+            if let Statement::Return { ref token, .. } = program.statements[i] {
+                assert_eq!(token.literal, "return");
+            } else {
+                panic!("expected return statement");
+            }
+        }
+    }
 }

@@ -7,7 +7,15 @@ pub struct Program {
 
 #[derive(Debug, Clone)]
 pub enum Statement {
-    Let { token: Token, name: Token },
+    Let {
+        token: Token,
+        name: Token,
+        //        value: Expression,
+    },
+    Return {
+        token: Token,
+        //        value: Expression
+    },
 }
 
 #[derive(Debug, Clone)]
