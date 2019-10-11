@@ -62,8 +62,25 @@ impl Node for Statement {
 
 #[derive(Debug, Clone)]
 pub enum Expression {
-    Identifier { token: Token, value: String },
-    IntegerLiteral { token: Token, value: i32 },
+    Identifier {
+        token: Token,
+        value: String,
+    },
+    IntegerLiteral {
+        token: Token,
+        value: i32,
+    },
+    Prefix {
+        token: Token,
+        operator: String,
+        right: Box<Expression>,
+    },
+    Infix {
+        token: Token,
+        operator: String,
+        left: Box<Expression>,
+        right: Box<Expression>,
+    },
 }
 
 impl Node for Expression {
@@ -72,6 +89,17 @@ impl Node for Expression {
         match self {
             Identifier { ref value, .. } => value.clone(),
             IntegerLiteral { ref token, .. } => token.literal.clone(),
+            Prefix {
+                ref operator,
+                ref right,
+                ..
+            } => format!("({}{})", operator, right.string()),
+            Infix {
+                ref operator,
+                ref left,
+                ref right,
+                ..
+            } => format!("({} {} {})", left.string(), operator, right.string()),
         }
     }
 }

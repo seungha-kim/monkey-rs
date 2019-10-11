@@ -2,6 +2,7 @@ use crate::ast::{Expression, Program, Statement};
 use crate::lexer::Lexer;
 use crate::token::{Token, TokenType};
 
+#[derive(PartialOrd, PartialEq)]
 enum Precedence {
     Lowest = 0,
     Equals,
@@ -10,6 +11,20 @@ enum Precedence {
     Product,
     Prefix,
     Call,
+}
+
+fn precedence_of_infix_operator(t: TokenType) -> Precedence {
+    match t {
+        TokenType::Eq => Precedence::Equals,
+        TokenType::NotEq => Precedence::Equals,
+        TokenType::LT => Precedence::LessGreater,
+        TokenType::GT => Precedence::LessGreater,
+        TokenType::Plus => Precedence::Sum,
+        TokenType::Minus => Precedence::Sum,
+        TokenType::Slash => Precedence::Product,
+        TokenType::Asterisk => Precedence::Product,
+        _ => Precedence::Lowest,
+    }
 }
 
 struct Parser<'a> {
@@ -125,7 +140,7 @@ impl<'a> Parser<'a> {
     fn parse_expression_statement(&mut self) -> Option<Statement> {
         let statement = Statement::Expression {
             token: self.current_token.clone().unwrap(),
-            expression: self.parse_expression().unwrap(), // FIXME: LOWEST?
+            expression: self.parse_expression(Precedence::Lowest).unwrap(),
         };
 
         // NOTE: optional semicolon
@@ -135,22 +150,82 @@ impl<'a> Parser<'a> {
         Some(statement)
     }
 
-    fn parse_expression(&mut self) -> Option<Expression> {
-        // TODO
-        self.parse_prefix_op(self.current_token.clone().unwrap().t)
-    }
-
-    fn parse_prefix_op(&mut self, token_type: TokenType) -> Option<Expression> {
-        // TODO
-        match token_type {
-            TokenType::Ident => self.parse_identifier(),
-            TokenType::Int => self.parse_integer_literal(),
-            t => panic!("{:?} is not supported yet", t),
+    fn is_nud(t: TokenType) -> bool {
+        use TokenType::*;
+        match t {
+            Bang | Minus | Ident | Int => true,
+            _ => false,
         }
     }
 
-    fn parse_infix_op(&mut self) -> Option<Expression> {
-        None
+    fn is_led(t: TokenType) -> bool {
+        match t {
+            TokenType::Plus
+            | TokenType::Minus
+            | TokenType::Slash
+            | TokenType::Asterisk
+            | TokenType::Eq
+            | TokenType::NotEq
+            | TokenType::LT
+            | TokenType::GT => true,
+            _ => false,
+        }
+    }
+
+    fn parse_expression(&mut self, precedence: Precedence) -> Option<Expression> {
+        if !Self::is_nud(self.current_token.as_ref().unwrap().t) {
+            // TODO: noPrefixParseFnError
+            return None;
+        }
+
+        let mut left_expression = self.parse_nud();
+
+        while !self.peek_token_is(TokenType::Semicolon) && precedence < self.peek_precedence() {
+            if !Self::is_led(self.peek_token.as_ref().unwrap().t) {
+                return left_expression;
+            }
+
+            self.next_token();
+
+            left_expression = self.parse_led(left_expression.unwrap());
+        }
+
+        left_expression
+    }
+
+    fn parse_nud(&mut self) -> Option<Expression> {
+        let current_token = self.current_token.clone().unwrap();
+
+        match current_token.t {
+            TokenType::Ident => self.parse_identifier(),
+            TokenType::Int => self.parse_integer_literal(),
+            TokenType::Bang | TokenType::Minus => {
+                self.next_token();
+                if let Some(right) = self.parse_expression(Precedence::Prefix) {
+                    Some(Expression::Prefix {
+                        token: current_token.clone(),
+                        operator: current_token.literal.to_string(),
+                        right: Box::new(right),
+                    })
+                } else {
+                    None
+                }
+            }
+            _ => panic!("should be nud"),
+        }
+    }
+
+    fn parse_led(&mut self, left: Expression) -> Option<Expression> {
+        let token = self.current_token.clone().unwrap();
+        let operator = token.literal.clone();
+        let precedence = self.current_precedence();
+        self.next_token();
+        Some(Expression::Infix {
+            token,
+            operator,
+            left: Box::new(left),
+            right: Box::new(self.parse_expression(precedence).unwrap()),
+        })
     }
 
     fn parse_identifier(&mut self) -> Option<Expression> {
@@ -199,6 +274,14 @@ impl<'a> Parser<'a> {
             t,
             self.peek_token.as_ref().unwrap().t
         ));
+    }
+
+    fn peek_precedence(&self) -> Precedence {
+        precedence_of_infix_operator(self.peek_token.as_ref().unwrap().t)
+    }
+
+    fn current_precedence(&self) -> Precedence {
+        precedence_of_infix_operator(self.current_token.as_ref().unwrap().t)
     }
 }
 
@@ -300,7 +383,7 @@ return 993322;
 
     #[test]
     fn integer_literal_expression() {
-        let input = "5;";
+        let input = "55;";
 
         let mut lexer = Lexer::new(input.into());
         let mut parser = Parser::new(&mut lexer);
@@ -311,7 +394,7 @@ return 993322;
 
         if let Statement::Expression { ref expression, .. } = &program.statements[0] {
             if let Expression::IntegerLiteral { value, .. } = expression {
-                if value != &5 {
+                if value != &55 {
                     panic!();
                 }
             } else {
@@ -319,6 +402,93 @@ return 993322;
             }
         } else {
             panic!();
+        }
+    }
+
+    #[test]
+    fn prefix_operator() {
+        let tests = vec![("!5;", "!", 5), ("-15;", "-", 15)];
+
+        for test in tests.iter() {
+            let (ref input, ref expected_operator, expected_value) = test;
+
+            let mut lexer = Lexer::new(input.to_string());
+            let mut parser = Parser::new(&mut lexer);
+            let program = parser.parse_program().unwrap();
+            check_parser_errors(&parser);
+
+            assert_eq!(program.statements.len(), 1);
+
+            if let Statement::Expression { ref expression, .. } = program.statements[0] {
+                if let Expression::Prefix {
+                    ref operator,
+                    ref right,
+                    ..
+                } = expression
+                {
+                    assert_eq!(operator, expected_operator);
+                    if let Expression::IntegerLiteral { value, .. } = **right {
+                        assert_eq!(value, *expected_value);
+                    } else {
+                        panic!();
+                    }
+                } else {
+                    panic!();
+                }
+            } else {
+                panic!();
+            }
+        }
+    }
+
+    #[test]
+    fn infix_expression() {
+        let tests = vec![
+            ("5 + 5;", 5, "+", 5),
+            ("5 - 5;", 5, "-", 5),
+            ("5 * 5;", 5, "*", 5),
+            ("5 / 5;", 5, "/", 5),
+            ("5 > 5;", 5, ">", 5),
+            ("5 < 5;", 5, "<", 5),
+            ("5 == 5;", 5, "==", 5),
+            ("5 != 5;", 5, "!=", 5),
+        ];
+
+        for (ref input, expected_left_operand, ref expected_operator, expected_right_operand) in
+            tests
+        {
+            let mut lexer = Lexer::new(input.to_string());
+            let mut parser = Parser::new(&mut lexer);
+            let program = parser.parse_program().unwrap();
+            check_parser_errors(&parser);
+
+            assert_eq!(program.statements.len(), 1);
+
+            if let Statement::Expression { ref expression, .. } = program.statements[0] {
+                if let Expression::Infix {
+                    ref operator,
+                    ref left,
+                    ref right,
+                    ..
+                } = expression
+                {
+                    assert_eq!(operator, expected_operator);
+                    if let Expression::IntegerLiteral { value, .. } = **left {
+                        assert_eq!(value, expected_left_operand);
+                    } else {
+                        panic!();
+                    }
+                    if let Expression::IntegerLiteral { value, .. } = **right {
+                        assert_eq!(value, expected_right_operand);
+                    } else {
+                        panic!();
+                    }
+                } else {
+                    panic!();
+                }
+            } else {
+                panic!();
+            }
         }
     }
 }
