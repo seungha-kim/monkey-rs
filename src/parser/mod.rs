@@ -194,6 +194,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_nud(&mut self) -> Option<Expression> {
+        // TODO: clone -> as_ref
         let current_token = self.current_token.clone().unwrap();
 
         match current_token.t {
