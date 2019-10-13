@@ -219,7 +219,7 @@ impl<'a> Parser<'a> {
     fn parse_led(&mut self, left: Expression) -> Option<Expression> {
         let token = self.current_token.clone().unwrap();
         let operator = token.literal.clone();
-        let precedence = self.current_precedence();
+        let precedence = self.current_precedence(); // TODO; right associativity
         self.next_token();
         Some(Expression::Infix {
             token,
@@ -289,6 +289,7 @@ impl<'a> Parser<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ast::Node;
     use std::any::Any;
 
     fn check_parser_errors(parser: &Parser) {
@@ -492,4 +493,34 @@ return 993322;
             }
         }
     }
+
+    #[test]
+    fn operator_precedence() {
+        let tests = vec![
+            ("-a + b", "((-a) + b);"),
+            ("!-a", "(!(-a));"),
+            ("a + b + c", "((a + b) + c);"),
+            ("a + b - c", "((a + b) - c);"),
+            ("a * b * c", "((a * b) * c);"),
+            ("a * b / c", "((a * b) / c);"),
+            ("a + b / c", "(a + (b / c));"),
+            ("a + b * c + d / e - f", "(((a + (b * c)) + (d / e)) - f);"),
+            ("3 + 4; -5 * 5", "(3 + 4);((-5) * 5);"),
+            ("5 > 4 == 3 < 4", "((5 > 4) == (3 < 4));"),
+            ("5 < 4 != 3 > 4", "((5 < 4) != (3 > 4));"),
+            (
+                "3 + 4 * 5 == 3 * 1 + 4 * 5",
+                "((3 + (4 * 5)) == ((3 * 1) + (4 * 5)));",
+            ),
+        ];
+        for (ref input, ref expected_string) in tests {
+            let mut lexer = Lexer::new(input.to_string());
+            let mut parser = Parser::new(&mut lexer);
+            let program = parser.parse_program().unwrap();
+            check_parser_errors(&parser);
+
+            assert_eq!(&program.string(), expected_string);
+        }
+    }
+
 }

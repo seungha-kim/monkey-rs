@@ -11,7 +11,7 @@ fn dummy_identifier() -> Expression {
     }
 }
 
-trait Node {
+pub trait Node {
     fn string(&self) -> String;
 }
 
